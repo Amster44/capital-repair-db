@@ -1,0 +1,70 @@
+=================================================================
+БЫСТРАЯ ИНСТРУКЦИЯ ДЛЯ РАБОТЫ НА НОВОМ ПК
+=================================================================
+
+ЧТО ВАМ НУЖНО:
+1. Файл: capital_repair_full.sql (дамп БД, ~100-500 MB)
+2. GitHub: https://github.com/Amster44/capital-repair-db
+
+=================================================================
+ШАГИ ДЛЯ ЗАПУСКА:
+=================================================================
+
+1. СКАЧАЙТЕ КОД С GITHUB:
+   git clone https://github.com/Amster44/capital-repair-db.git
+   cd capital-repair-db
+
+2. УСТАНОВИТЕ PostgreSQL:
+   Windows: https://www.postgresql.org/download/windows/
+   Пароль при установке: 123456 (или любой другой)
+
+3. ВОССТАНОВИТЕ БАЗУ ДАННЫХ:
+   
+   Windows:
+   "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE DATABASE capital_repair_db;"
+   "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -d capital_repair_db -f путь\к\capital_repair_full.sql
+
+   Linux:
+   sudo -u postgres createdb capital_repair_db
+   sudo -u postgres psql -d capital_repair_db < capital_repair_full.sql
+
+4. УСТАНОВИТЕ PYTHON ЗАВИСИМОСТИ:
+   python -m venv venv
+   venv\Scripts\activate     # Windows
+   source venv/bin/activate  # Linux
+   pip install -r requirements.txt
+   pip install -r backend/requirements.txt
+
+5. СОЗДАЙТЕ ФАЙЛ scripts/.env:
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_NAME=capital_repair_db
+   DB_USER=postgres
+   DB_PASSWORD=ваш_пароль_от_postgresql
+
+6. ЗАПУСТИТЕ BACKEND:
+   cd backend
+   python api.py
+   # Откроется на http://localhost:5000
+
+7. ЗАПУСТИТЕ FRONTEND (в новом терминале):
+   cd frontend
+   npm install
+   npm start
+   # Откроется на http://localhost:3000
+
+=================================================================
+ГОТОВО!
+=================================================================
+
+Веб-интерфейс: http://localhost:3000
+API: http://localhost:5000/api/stats
+
+Production сервер: http://62.113.36.101
+GitHub: https://github.com/Amster44/capital-repair-db
+
+Полная документация в файлах:
+- QUICK_START_NEW_PC.md
+- SETUP_GUIDE.md
+
+=================================================================
