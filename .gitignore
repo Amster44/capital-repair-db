@@ -1,0 +1,54 @@
+# Data files (too large for Git)
+data/**/*.csv
+data/**/*.xlsx
+*.tar.gz
+*.zip
+*.sql.gz
+
+# Specific large files
+Реестр*.xlsx
+Сведения*.csv
+Сведения*.zip
+Сведения*.tar.gz
+fias.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+scripts/*.log
+scripts/NUL
+
+# Environment
+.env
+scripts/.env
+
+# Claude
+.claude/
+
+# Keep structure but ignore data
+!data/**/.gitkeep
+!data/README.md
+!data/**/*.txt

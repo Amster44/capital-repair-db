@@ -1,0 +1,1 @@
+Сюда загружать файлы: export-kr1_1-*.csv, export-kr1_2-*.csv, export-kr1_3-*.csv
