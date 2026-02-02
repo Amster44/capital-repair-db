@@ -52,3 +52,13 @@ scripts/.env
 !data/**/.gitkeep
 !data/README.md
 !data/**/*.txt
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.env
+
+# Backend
+backend/__pycache__/
+backend/*.pyc
+backend/venv/
