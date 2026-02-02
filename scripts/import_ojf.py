@@ -9,6 +9,7 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import execute_batch
 from config import DB_CONFIG, BASE_DIR
+import re
 
 # Setup logging
 logging.basicConfig(
@@ -35,6 +36,109 @@ OJF_REGION_MAPPING = {
     'Саратовская обл': '64',
     'Ульяновская обл': '73'
 }
+
+
+def normalize_address(address: str) -> str:
+    """
+    Maximum normalization for address matching
+    Handles all variants of street types (abbreviated and full forms)
+    Extracts only key components: city, street name, house number
+    """
+    if not address:
+        return ""
+
+    # Convert to lowercase first
+    address = address.lower()
+
+    # Remove postal code (6 digits at start)
+    address = re.sub(r'^\d{6},?\s*', '', address)
+
+    # Remove region prefixes (обл, Респ, край, АО, etc.)
+    address = re.sub(r'^[^,]+\s+(обл|респ|край|ао|автономный округ)[,\s]*', '', address)
+
+    # Normalize common abbreviations before processing
+    address = address.replace(' г.', ' г ').replace(' г,', ' г ')
+    address = address.replace(' д.', ' д ').replace(' д,', ' д ')
+    address = address.replace(' корп.', ' к ').replace(' корп,', ' к ')
+    address = address.replace(' стр.', ' с ').replace(' стр,', ' с ')
+    address = address.replace(' кв.', ' кв ').replace(' кв,', ' кв ')
+
+    # Define all street type variants (abbreviated and full forms)
+    street_types = {
+        # Шоссе variants
+        r'\bш\.': 'шоссе',
+        r'\bш\b': 'шоссе',
+        r'\bшоссе\b': 'шоссе',
+        # Переулок variants
+        r'\bпер\.': 'переулок',
+        r'\bпер\b': 'переулок',
+        r'\bпереулок\b': 'переулок',
+        # Улица variants
+        r'\bул\.': 'улица',
+        r'\bул\b': 'улица',
+        r'\bулица\b': 'улица',
+        # Проспект variants
+        r'\bпр-кт\b': 'проспект',
+        r'\bпр\.': 'проспект',
+        r'\bпр\b': 'проспект',
+        r'\bпросп\.': 'проспект',
+        r'\bпроспект\b': 'проспект',
+        # Бульвар variants
+        r'\bб-р\.': 'бульвар',
+        r'\bб-р\b': 'бульвар',
+        r'\bбул\.': 'бульвар',
+        r'\bбульвар\b': 'бульвар',
+        # Набережная variants
+        r'\bнаб\.': 'набережная',
+        r'\bнабережная\b': 'набережная',
+        # Площадь variants
+        r'\bпл\.': 'площадь',
+        r'\bплощадь\b': 'площадь',
+        # Тупик variants
+        r'\bтуп\.': 'тупик',
+        r'\bтупик\b': 'тупик',
+        # Проезд variants
+        r'\bпр-д\b': 'проезд',
+        r'\bпроезд\b': 'проезд',
+    }
+
+    # Unify all street type variants to standard forms
+    for pattern, replacement in street_types.items():
+        address = re.sub(pattern, replacement, address)
+
+    # Fix street type order: "тип название" -> "название"
+    # Match: comma/space + street_type + space + word(s)
+    street_type_list = ['шоссе', 'переулок', 'улица', 'проспект', 'бульвар', 'набережная', 'площадь', 'тупик', 'проезд']
+
+    for stype in street_type_list:
+        # Match pattern: , тип Название (multi-word)
+        # Capture street name and move it before type
+        pattern = r',\s*' + stype + r'\s+([а-яёА-ЯЁ][а-яёА-ЯЁ\s\-]*?)(?=\s*[,д]|\s*$)'
+        address = re.sub(pattern, r', \1', address)
+
+    # Also handle "название тип" -> "название" (remove type that comes after)
+    for stype in street_type_list:
+        address = re.sub(r'\b' + stype + r'\b', '', address)
+
+    # Remove city prefix "г"
+    address = re.sub(r'\bг\s+', '', address)
+
+    # Normalize house/building number markers
+    address = re.sub(r'\bд\s+', 'д', address)
+    address = re.sub(r'\bк\s+', 'к', address)
+    address = re.sub(r'\bс\s+', 'с', address)
+
+    # Normalize house litera (letter): remove space between number and letter
+    # "303 А" -> "303а", "123 Б" -> "123б"
+    address = re.sub(r'(\d+)\s+([а-яёА-ЯЁ])\b', r'\1\2', address)
+
+    # Remove extra spaces and commas
+    address = re.sub(r'\s+', ' ', address)
+    address = re.sub(r'\s*,\s*', ',', address)  # Clean spaces around commas
+    address = re.sub(r',+', ',', address)
+    address = address.strip(' ,')
+
+    return address
 
 
 def get_region_code_from_filename(filename: str) -> str:
@@ -68,7 +172,7 @@ def import_ojf_file(filepath: Path, conn):
 
     region_id = result[0]
 
-    # Dictionary to store unique houses: houseguid → (ogrn, uk_name, management_type)
+    # Dictionary to store unique houses: houseguid → (address, ogrn, uk_name, management_type)
     houses = {}
     uk_data = {}  # ogrn → (name, management_type)
 
@@ -89,12 +193,17 @@ def import_ojf_file(filepath: Path, conn):
                     if ';' in houseguid:
                         houseguid = houseguid.split(';')[0].strip()
 
+                    address = row.get('Адрес ОЖФ', '').strip()
+                    oktmo = row.get('Код ОКТМО', '').strip()
                     ogrn = row.get('ОГРН организации, осуществляющей управление домом', '').strip()
                     uk_name = row.get('Наименование организации, осуществляющей управление домом', '').strip()
                     management_type = row.get('Способ управления', '').strip()
 
-                    # Skip if no houseguid or no management company
-                    if not houseguid or not ogrn:
+                    # Normalize OKTMO to 8 digits (municipality level)
+                    oktmo_short = oktmo[:8] if oktmo and len(oktmo) >= 8 else None
+
+                    # Skip if no houseguid/address/oktmo or no management company
+                    if (not houseguid and not address and not oktmo_short) or not ogrn:
                         continue
 
                     # Convert management type to our codes
@@ -109,9 +218,11 @@ def import_ojf_file(filepath: Path, conn):
                     if not mgmt_code:
                         continue  # Skip regional operators and others
 
-                    # Store house data
-                    if houseguid not in houses:
-                        houses[houseguid] = (ogrn, uk_name, mgmt_code)
+                    # Store house data with all identifiers
+                    # Use a composite key: houseguid + "|" + oktmo + "|" + address
+                    key = f"{houseguid}|{oktmo_short}|{address}"
+                    if key not in houses:
+                        houses[key] = (houseguid, oktmo_short, address, ogrn, uk_name, mgmt_code)
 
                     # Store UK data
                     if ogrn not in uk_data:
@@ -170,20 +281,75 @@ def import_ojf_file(filepath: Path, conn):
                        (list(uk_data.keys()),))
             ogrn_to_id = {row[1]: row[0] for row in cur.fetchall()}
 
-            # Get building IDs by houseguid (cast to UUID[])
-            cur.execute(
-                "SELECT id, houseguid FROM buildings WHERE houseguid = ANY(%s::uuid[]) AND region_id = %s",
-                (list(houses.keys()), region_id)
-            )
-            houseguid_to_building = {row[1]: row[0] for row in cur.fetchall()}
+            # Get all buildings in region with their municipality OKTMO codes
+            cur.execute("""
+                SELECT b.id, b.houseguid, b.address, m.oktmo_code
+                FROM buildings b
+                LEFT JOIN municipalities m ON b.municipality_id = m.id
+                WHERE b.region_id = %s
+            """, (region_id,))
 
+            # Create lookup dictionaries
+            houseguid_to_building = {}
+            oktmo_address_to_building = {}
+            address_to_building = {}
+
+            for row in cur.fetchall():
+                building_id = row[0]
+                houseguid = str(row[1]) if row[1] else None
+                address = row[2]
+                oktmo = row[3]
+
+                if houseguid:
+                    houseguid_to_building[houseguid] = building_id
+
+                if address:
+                    normalized = normalize_address(address)
+                    address_to_building[normalized] = building_id
+
+                    # Create OKTMO+address lookup (municipality level - 8 digits)
+                    if oktmo:
+                        oktmo_short = oktmo[:8] if len(oktmo) >= 8 else oktmo
+                        oktmo_key = f"{oktmo_short}|{normalized}"
+                        oktmo_address_to_building[oktmo_key] = building_id
+
+            # Match houses to buildings
             link_records = []
-            for houseguid, (ogrn, uk_name, mgmt_code) in houses.items():
-                mc_id = ogrn_to_id.get(ogrn)
-                building_id = houseguid_to_building.get(houseguid)
+            matched_by_houseguid = 0
+            matched_by_oktmo = 0
+            matched_by_address = 0
 
-                if mc_id and building_id:
+            for key, (houseguid, oktmo_short, address, ogrn, uk_name, mgmt_code) in houses.items():
+                mc_id = ogrn_to_id.get(ogrn)
+                if not mc_id:
+                    continue
+
+                building_id = None
+
+                # Try houseguid first
+                if houseguid and houseguid in houseguid_to_building:
+                    building_id = houseguid_to_building[houseguid]
+                    matched_by_houseguid += 1
+
+                # If not found by houseguid, try OKTMO + address
+                if not building_id and oktmo_short and address:
+                    normalized = normalize_address(address)
+                    oktmo_key = f"{oktmo_short}|{normalized}"
+                    if oktmo_key in oktmo_address_to_building:
+                        building_id = oktmo_address_to_building[oktmo_key]
+                        matched_by_oktmo += 1
+
+                # If still not found, try address only
+                if not building_id and address:
+                    normalized = normalize_address(address)
+                    if normalized in address_to_building:
+                        building_id = address_to_building[normalized]
+                        matched_by_address += 1
+
+                if building_id:
                     link_records.append((building_id, mc_id))
+
+            logger.info(f"Matched {matched_by_houseguid} buildings by houseguid, {matched_by_oktmo} by OKTMO+address, {matched_by_address} by address only")
 
             # Insert into buildings_management table
             if link_records:

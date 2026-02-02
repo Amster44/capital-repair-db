@@ -62,3 +62,20 @@ frontend/.env
 backend/__pycache__/
 backend/*.pyc
 backend/venv/
+
+# Deployment scripts (contain credentials)
+*password*.py
+*credentials*.py
+deploy*.py
+upload*.py
+*_fix*.py
+import_*.py
+test_*.py
+check_*.py
+clean_*.py
+reinit_*.py
+radical_*.py
+fix_*.py
+final_*.py
+complete_*.py
+autodeploy.py

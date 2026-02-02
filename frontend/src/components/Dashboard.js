@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Grid, Card, CardContent, Typography, CircularProgress } from '@mui/material';
 import axios from 'axios';
 
-const API_URL = 'http://62.113.36.101:5000/api';
+const API_URL = 'http://localhost:5000/api';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);

@@ -17,8 +17,8 @@ DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'port': os.getenv('DB_PORT', '5432'),
     'database': os.getenv('DB_NAME', 'capital_repair_db'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', '123456')
+    'user': os.getenv('DB_USER', 'repair_user'),
+    'password': os.getenv('DB_PASSWORD', 'repair_password_2026')
 }
 
 # Маппинг кодов регионов на папки

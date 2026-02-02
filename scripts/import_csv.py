@@ -12,7 +12,7 @@ import argparse
 import csv
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import psycopg2
@@ -124,11 +124,13 @@ class CSVImporter:
             self.conn.commit()
 
     def parse_decimal(self, value: str) -> Optional[float]:
-        """Парсинг decimal значений (запятая → точка)"""
+        """Парсинг decimal значений (запятая → точка, убираем пробелы)"""
         if not value or value.strip() == '':
             return None
         try:
-            return float(value.replace(',', '.').strip())
+            # Убираем пробелы (разделители тысяч) и заменяем запятую на точку
+            cleaned = value.replace(' ', '').replace(',', '.').strip()
+            return float(cleaned)
         except ValueError:
             return None
 
@@ -262,7 +264,8 @@ class CSVImporter:
                         row.get('comment', '').strip() or None,                          # 29
                         self.parse_date(row.get('update_date_of_information', '')),      # 30
                         self.parse_date(row.get('money_ppl_collected_date', '')),        # 31
-                        self.parse_date(row.get('last_update', ''))                      # 32
+                        self.parse_date(row.get('last_update', '')),                     # 32
+                        self.region_info['name']                                         # 33 region (текстовое название)
                     )
 
                     buildings_data.append(building)
@@ -299,16 +302,18 @@ class CSVImporter:
                     energy_efficiency, architectural_monument_category,
                     alarm_document_date, exclude_date_from_program,
                     inclusion_date_to_program, comment,
-                    update_date_of_information, money_ppl_collected_date, last_update
+                    update_date_of_information, money_ppl_collected_date, last_update,
+                    region
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (region_id, mkd_code) DO UPDATE SET
                     houseguid = EXCLUDED.houseguid,
                     address = EXCLUDED.address,
                     overhaul_funds_balance = EXCLUDED.overhaul_funds_balance,
-                    last_update = EXCLUDED.last_update
+                    last_update = EXCLUDED.last_update,
+                    region = EXCLUDED.region
             """, buildings_data)
 
     def import_kr1_2(self, file_path: Path) -> int:
@@ -343,13 +348,30 @@ class CSVImporter:
 
                     # Если это лифт
                     if 'лифт' in element_type.lower():
+                        commissioning_date_str = self.parse_date(row.get('commissioning_date', ''))
+                        decommissioning_date_str = row.get('decommissioning_date', '').strip()
+
+                        # Если срок вывода пустой, рассчитываем его: срок ввода + 25 лет
+                        if not decommissioning_date_str and commissioning_date_str:
+                            try:
+                                # Парсим дату ввода в эксплуатацию
+                                comm_dt = datetime.strptime(commissioning_date_str, '%Y-%m-%d')
+                                # Добавляем 25 лет
+                                decomm_dt = comm_dt + timedelta(days=365*25)
+                                # Конвертируем обратно в строку
+                                decommissioning_date = decomm_dt.strftime('%Y-%m-%d')
+                            except (ValueError, TypeError):
+                                decommissioning_date = None
+                        else:
+                            decommissioning_date = self.parse_date(decommissioning_date_str)
+
                         lift = (
                             building_id,
                             row.get('construction_element_code', '').strip() or None,
                             row.get('lift_type', '').strip() or None,
                             self.parse_int(row.get('stops_count', '')),
-                            self.parse_date(row.get('commissioning_date', '')),
-                            self.parse_date(row.get('decommissioning_date', '')),
+                            commissioning_date_str,
+                            decommissioning_date,
                             self.parse_date(row.get('last_update', ''))
                         )
                         lifts_data.append(lift)
